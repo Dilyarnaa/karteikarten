@@ -184,7 +184,7 @@ let db = loadDB();
 let state = {
   view:'dashboard', moduleId:null,
   priorityFilter:'all', difficultyFilter:'due',
-  studying:false, queue:[], revealed:false, doneCount:0,
+  studying:false, queue:[], revealed:false, doneCount:0, hardCount:{},
   modalOpen:false, editId:null,
 };
 function save() { localStorage.setItem('flashcards_db', JSON.stringify(db)); pushToCloud(); }
@@ -401,6 +401,7 @@ function viewStudy(m){
     <div class="study-top">
       <button class="btn-ghost" id="exitStudy">✕ Session beenden</button>
       <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn-ghost" id="editCurrent" title="Diese Karte bearbeiten" style="padding:4px 8px;font-size:16px">✏️</button>
         <span class="badge ${card.priority==='A'?'b-A':'b-B'}">${card.priority}-Prio</span>
         <span style="font-size:13px;color:var(--slate-500)">${state.queue.length} im Stapel</span>
       </div>
@@ -474,8 +475,13 @@ function doRate(level){
   state.revealed = false;
   const rest = state.queue.slice(1);
   if (level==='hard'){
-    const pos = Math.min(3, rest.length);           // "Schwer": zeitnah wieder einreihen
-    state.queue = [...rest.slice(0,pos), id, ...rest.slice(pos)];
+    state.hardCount[id] = (state.hardCount[id]||0) + 1;
+    if (state.hardCount[id] < 2){                    // 1. "Schwer": einmal zeitnah wieder einreihen
+      const pos = Math.min(3, rest.length);
+      state.queue = [...rest.slice(0,pos), id, ...rest.slice(pos)];
+    } else {                                         // 2. "Schwer": raus, nicht mehr abfragen
+      state.queue = rest; state.doneCount++;
+    }
   } else {
     state.queue = rest;                              // Mittel/Leicht: raus aus Session
     state.doneCount++;
@@ -502,13 +508,14 @@ function bind(){
   if ($('diffFilter')) $('diffFilter').onchange = (e)=>{ state.difficultyFilter=e.target.value; render(); };
   document.querySelectorAll('[data-delcard]').forEach(el=>el.onclick=()=>deleteCard(el.dataset.delcard));
   document.querySelectorAll('[data-editcard]').forEach(el=>el.onclick=()=>{ state.editId=el.dataset.editcard; state.modalOpen=true; render(); });
-  if ($('startStudy')) $('startStudy').onclick = ()=>{ const pool=buildPool(); if(!pool.length) return; state.studying=true; state.queue=pool.map(c=>c.id); state.revealed=false; state.doneCount=0; render(); };
+  if ($('startStudy')) $('startStudy').onclick = ()=>{ const pool=buildPool(); if(!pool.length) return; state.studying=true; state.queue=pool.map(c=>c.id); state.revealed=false; state.doneCount=0; state.hardCount={}; render(); };
 
   // Lern-Session
   if ($('cardFlip')) $('cardFlip').onclick = revealCard;
   if ($('revealBtn')) $('revealBtn').onclick = revealCard;
   document.querySelectorAll('[data-rate]').forEach(el=>el.onclick=()=>doRate(el.dataset.rate));
   if ($('exitStudy')) $('exitStudy').onclick = ()=>{ state.studying=false; render(); };
+  if ($('editCurrent')) $('editCurrent').onclick = ()=>{ state.editId=state.queue[0]; state.revealed=false; state.modalOpen=true; render(); };
 
   // Modal
   if (state.modalOpen){
