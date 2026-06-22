@@ -81,6 +81,8 @@
   .row .txt .b { font-size:13px; color:var(--slate-500); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .row .del { background:none; color:var(--slate-300); font-size:16px; }
   .row .del:hover { color:var(--rose); }
+  .row .edit { background:none; font-size:15px; opacity:.55; }
+  .row .edit:hover { opacity:1; }
   .empty { text-align:center; color:var(--slate-400); padding:40px 0; }
 
   /* Study */
@@ -182,7 +184,7 @@ let state = {
   view:'dashboard', moduleId:null,
   priorityFilter:'all', difficultyFilter:'due',
   studying:false, queue:[], revealed:false, doneCount:0,
-  modalOpen:false,
+  modalOpen:false, editId:null,
 };
 function save() { localStorage.setItem('flashcards_db', JSON.stringify(db)); pushToCloud(); }
 
@@ -232,6 +234,7 @@ function deleteModule(id) {
   state.view='dashboard'; state.moduleId=null; save(); render();
 }
 function addCard(card){ db.cards.push(card); save(); render(); }
+function updateCard(id, fields){ const c=db.cards.find(x=>x.id===id); if(c) Object.assign(c, fields); save(); render(); }
 function deleteCard(id){ db.cards = db.cards.filter(c=>c.id!==id); save(); render(); }
 function rateCard(id, level){
   const c = db.cards.find(x=>x.id===id);
@@ -338,6 +341,7 @@ function viewModule(m){
       <div class="txt"><div class="f">${esc(c.front)}</div><div class="b">${esc(c.back)}</div></div>
       ${diffBadge(c.difficulty)}
       ${isHidden(c)?`<span class="badge b-sleep">💤 ${daysLeft(c)} T</span>`:''}
+      <button class="edit" data-editcard="${c.id}" title="Bearbeiten">✏️</button>
       <button class="del" data-delcard="${c.id}">🗑</button>
     </div>`).join('');
 
@@ -439,17 +443,20 @@ function revealCard(){
 }
 
 function modalHTML(activeModule){
-  const opts = db.modules.map(m=>`<option value="${m.id}"${activeModule&&activeModule.id===m.id?' selected':''}>${esc(m.name)}</option>`).join('');
+  const card = state.editId ? db.cards.find(c=>c.id===state.editId) : null;
+  const selMod = card ? card.moduleId : (activeModule && activeModule.id);
+  const prio = card ? card.priority : 'A';
+  const opts = db.modules.map(m=>`<option value="${m.id}"${m.id===selMod?' selected':''}>${esc(m.name)}</option>`).join('');
   return `<div class="overlay" id="overlay">
     <div class="modal" id="modalBox">
-      <h2>Neue Karteikarte</h2>
-      <div class="field"><label>Vorderseite (Frage / Konzept)</label><textarea id="mFront" rows="2"></textarea></div>
-      <div class="field"><label>Rückseite (Antwort / Erklärung)</label><textarea id="mBack" rows="3"></textarea></div>
+      <h2>${card?'Karte bearbeiten':'Neue Karteikarte'}</h2>
+      <div class="field"><label>Vorderseite (Frage / Konzept)</label><textarea id="mFront" rows="2">${card?esc(card.front):''}</textarea></div>
+      <div class="field"><label>Rückseite (Antwort / Erklärung)</label><textarea id="mBack" rows="3">${card?esc(card.back):''}</textarea></div>
       <div class="two">
         <div><label class="flabel" style="text-transform:none;font-size:13px;color:var(--slate-500)">Modul</label>
           <select id="mModule">${opts || '<option value="">Erst Modul anlegen</option>'}</select></div>
         <div><label class="flabel" style="text-transform:none;font-size:13px;color:var(--slate-500)">Klausurrelevanz</label>
-          <select id="mPrio"><option value="A">A-Priorität (sehr wichtig)</option><option value="B">B-Priorität (ergänzend)</option></select></div>
+          <select id="mPrio"><option value="A"${prio==='A'?' selected':''}>A-Priorität (sehr wichtig)</option><option value="B"${prio==='B'?' selected':''}>B-Priorität (ergänzend)</option></select></div>
       </div>
       <div class="modal-actions">
         <button class="btn-ghost" id="modalCancel">Abbrechen</button>
@@ -480,7 +487,7 @@ function bind(){
   const $ = (id)=>document.getElementById(id);
 
   $('goHome').onclick = ()=>{ state.view='dashboard'; state.moduleId=null; state.studying=false; render(); };
-  $('fab').onclick = ()=>{ state.modalOpen=true; render(); };
+  $('fab').onclick = ()=>{ state.editId=null; state.modalOpen=true; render(); };
 
   // Dashboard
   document.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>{ state.view='module'; state.moduleId=el.dataset.open; state.studying=false; state.priorityFilter='all'; state.difficultyFilter='due'; render(); });
@@ -493,6 +500,7 @@ function bind(){
   document.querySelectorAll('[data-prio]').forEach(el=>el.onclick=()=>{ state.priorityFilter=el.dataset.prio; render(); });
   if ($('diffFilter')) $('diffFilter').onchange = (e)=>{ state.difficultyFilter=e.target.value; render(); };
   document.querySelectorAll('[data-delcard]').forEach(el=>el.onclick=()=>deleteCard(el.dataset.delcard));
+  document.querySelectorAll('[data-editcard]').forEach(el=>el.onclick=()=>{ state.editId=el.dataset.editcard; state.modalOpen=true; render(); });
   if ($('startStudy')) $('startStudy').onclick = ()=>{ const pool=buildPool(); if(!pool.length) return; state.studying=true; state.queue=pool.map(c=>c.id); state.revealed=false; state.doneCount=0; render(); };
 
   // Lern-Session
@@ -503,7 +511,7 @@ function bind(){
 
   // Modal
   if (state.modalOpen){
-    const close=()=>{ state.modalOpen=false; render(); };
+    const close=()=>{ state.modalOpen=false; state.editId=null; render(); };
     $('overlay').onclick = close;
     $('modalBox').onclick = (e)=>e.stopPropagation();
     $('modalCancel').onclick = close;
@@ -511,8 +519,9 @@ function bind(){
     $('modalSave').onclick = ()=>{
       const front=$('mFront').value.trim(), back=$('mBack').value.trim(), moduleId=$('mModule').value, priority=$('mPrio').value;
       if(!front||!back||!moduleId) return;
-      addCard({id:uid(),moduleId,front,back,priority,difficulty:null,lastReviewed:null,hiddenUntil:0});
-      state.modalOpen=false; render();
+      if (state.editId) updateCard(state.editId, {front,back,moduleId,priority});
+      else addCard({id:uid(),moduleId,front,back,priority,difficulty:null,lastReviewed:null,hiddenUntil:0});
+      state.modalOpen=false; state.editId=null; render();
     };
   }
 }
