@@ -91,7 +91,7 @@
   .card-flip { perspective:1600px; margin-bottom:24px; cursor:pointer; animation:cardIn .4s cubic-bezier(.16,1,.3,1); }
   .card-inner { position:relative; transition:transform .65s cubic-bezier(.2,.8,.2,1); transform-style:preserve-3d; min-height:280px; }
   .card-inner.flipped { transform:rotateY(180deg); }
-  .face { position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:16px; padding:32px; min-height:280px; box-shadow:0 12px 30px rgba(15,23,42,.12); text-align:center; transition:box-shadow .3s; }
+  .face { position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:16px; padding:28px; min-height:280px; box-shadow:0 12px 30px rgba(15,23,42,.12); text-align:center; transition:box-shadow .3s; overflow:auto; }
   .card-flip:hover .face-front { box-shadow:0 18px 40px rgba(79,70,229,.22); }
   .face-front { background:#fff; border:1px solid var(--slate-200); }
   .face-back { background:linear-gradient(135deg,#eef2ff,#e0e7ff); border:1px solid #c7d2fe; transform:rotateY(180deg); }
@@ -432,6 +432,21 @@ function rateControlsHTML(){ return `
       <button class="r-easy" data-rate="easy">Leicht<span>in 4 Tagen</span></button>
     </div>`; }
 
+/* Schriftgröße der Karte automatisch verkleinern, bis der Text passt */
+function fitText(face, el, base, min){
+  if (!face || !el) return;
+  let s = base; el.style.fontSize = s+'px'; el.style.lineHeight = '1.35';
+  let guard = 0;
+  while (face.scrollHeight > face.clientHeight + 1 && s > min && guard < 80){
+    s -= 1; el.style.fontSize = s+'px'; guard++;
+  }
+}
+function fitCard(){
+  const inner = document.getElementById('cardInner'); if (!inner) return;
+  fitText(inner.querySelector('.face-front'), inner.querySelector('.q'), 24, 13);
+  fitText(inner.querySelector('.face-back'),  inner.querySelector('.a'), 20, 12);
+}
+
 function revealCard(){
   if (state.revealed) return;
   state.revealed = true;
@@ -513,6 +528,7 @@ function bind(){
   // Lern-Session
   if ($('cardFlip')) $('cardFlip').onclick = revealCard;
   if ($('revealBtn')) $('revealBtn').onclick = revealCard;
+  if ($('cardInner')) fitCard();
   document.querySelectorAll('[data-rate]').forEach(el=>el.onclick=()=>doRate(el.dataset.rate));
   if ($('exitStudy')) $('exitStudy').onclick = ()=>{ state.studying=false; render(); };
   if ($('editCurrent')) $('editCurrent').onclick = ()=>{ state.editId=state.queue[0]; state.revealed=false; state.modalOpen=true; render(); };
