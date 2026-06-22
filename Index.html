@@ -1,0 +1,524 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Karteikarten – Lern-App</title>
+<style>
+  :root {
+    --indigo:#4f46e5; --indigo-d:#4338ca; --rose:#f43f5e; --amber:#f59e0b;
+    --emerald:#10b981; --slate-50:#f8fafc; --slate-100:#f1f5f9; --slate-200:#e2e8f0;
+    --slate-300:#cbd5e1; --slate-400:#94a3b8; --slate-500:#64748b; --slate-700:#334155; --slate-800:#1e293b;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--slate-100); color:var(--slate-800); min-height:100vh; }
+  button { font-family:inherit; cursor:pointer; border:none; }
+  input, select, textarea { font-family:inherit; font-size:14px; }
+
+  header { position:sticky; top:0; z-index:40; background:rgba(255,255,255,.85); backdrop-filter:blur(8px); border-bottom:1px solid var(--slate-200); }
+  .header-inner { max-width:1024px; margin:0 auto; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; }
+  .logo { display:flex; align-items:center; gap:8px; font-size:18px; font-weight:700; background:none; color:var(--slate-800); }
+  .header-stats { font-size:13px; color:var(--slate-400); }
+
+  main { padding:0 16px 100px; }
+  .wrap { max-width:1024px; margin:0 auto; padding:24px 0; }
+  .wrap-narrow { max-width:680px; }
+
+  h1.page { font-size:30px; font-weight:700; margin-bottom:4px; }
+  .sub { color:var(--slate-500); margin-bottom:24px; }
+
+  /* Dashboard */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:16px; }
+  .tile { position:relative; border-radius:16px; padding:24px; color:#fff; box-shadow:0 4px 6px rgba(0,0,0,.07); cursor:pointer; transition:transform .15s, box-shadow .15s; overflow:hidden; }
+  .tile:hover { transform:scale(1.02); box-shadow:0 12px 20px rgba(0,0,0,.15); }
+  .tile h2 { font-size:24px; font-weight:700; }
+  .tile .c1 { margin-top:8px; opacity:.95; }
+  .tile .c2 { font-size:13px; opacity:.78; }
+  .tile .del { position:absolute; top:10px; right:12px; background:none; color:rgba(255,255,255,.6); font-size:16px; }
+  .tile .del:hover { color:#fff; }
+  .tile-new { display:flex; flex-direction:column; justify-content:center; border:2px dashed var(--slate-300); border-radius:16px; padding:24px; }
+
+  .c-indigo{background:linear-gradient(135deg,#6366f1,#8b5cf6);}
+  .c-emerald{background:linear-gradient(135deg,#10b981,#14b8a6);}
+  .c-rose{background:linear-gradient(135deg,#f43f5e,#ec4899);}
+  .c-amber{background:linear-gradient(135deg,#f59e0b,#f97316);}
+  .c-sky{background:linear-gradient(135deg,#0ea5e9,#06b6d4);}
+  .c-fuchsia{background:linear-gradient(135deg,#d946ef,#a855f7);}
+
+  input[type=text], select, textarea { width:100%; border:1px solid var(--slate-300); border-radius:8px; padding:10px; background:#fff; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--indigo); box-shadow:0 0 0 1px var(--indigo); }
+  textarea { resize:none; }
+
+  .btn { border-radius:8px; padding:10px 20px; font-weight:600; color:#fff; background:var(--indigo); transition:background .15s; }
+  .btn:hover { background:var(--indigo-d); }
+  .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .btn-dark { background:var(--slate-800); } .btn-dark:hover{ background:#0f172a; }
+  .btn-ghost { background:none; color:var(--slate-500); padding:8px 16px; font-weight:500; }
+  .btn-ghost:hover { color:var(--slate-800); }
+  .link-back { background:none; color:var(--slate-500); font-size:14px; font-weight:500; margin-bottom:16px; }
+  .link-back:hover { color:var(--slate-800); }
+
+  .badge { border-radius:999px; padding:2px 10px; font-size:12px; font-weight:700; }
+  .b-A { background:#ffe4e6; color:#be123c; } .b-B { background:var(--slate-200); color:var(--slate-500); }
+  .b-new { background:var(--slate-100); color:var(--slate-500); font-weight:500; }
+  .b-hard { background:#ffe4e6; color:#be123c; } .b-medium { background:#fef3c7; color:#b45309; } .b-easy { background:#d1fae5; color:#047857; }
+  .b-sleep { background:#e0f2fe; color:#0369a1; }
+
+  .module-head { border-radius:16px; padding:24px; color:#fff; margin-bottom:24px; box-shadow:0 4px 6px rgba(0,0,0,.07); }
+  .module-head h1 { font-size:30px; font-weight:700; } .module-head p { margin-top:4px; opacity:.9; }
+
+  .filterbar { display:flex; flex-wrap:wrap; align-items:flex-end; gap:16px; background:#fff; border:1px solid var(--slate-200); border-radius:12px; padding:16px; margin-bottom:24px; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+  .flabel { display:block; font-size:11px; font-weight:600; text-transform:uppercase; color:var(--slate-400); margin-bottom:4px; }
+  .toggle { display:inline-flex; border:1px solid var(--slate-300); border-radius:8px; padding:2px; }
+  .toggle button { border-radius:6px; padding:6px 12px; font-size:14px; font-weight:500; background:none; color:var(--slate-500); }
+  .toggle button.on-indigo { background:var(--indigo); color:#fff; }
+  .toggle button.on-rose { background:var(--rose); color:#fff; }
+
+  .row { display:flex; align-items:center; gap:12px; background:#fff; border:1px solid var(--slate-200); border-radius:12px; padding:14px 16px; box-shadow:0 1px 2px rgba(0,0,0,.05); margin-bottom:8px; }
+  .row .txt { flex:1; min-width:0; }
+  .row .txt .f { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .txt .b { font-size:13px; color:var(--slate-500); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .del { background:none; color:var(--slate-300); font-size:16px; }
+  .row .del:hover { color:var(--rose); }
+  .empty { text-align:center; color:var(--slate-400); padding:40px 0; }
+
+  /* Study */
+  .study-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  @keyframes cardIn { from{opacity:0; transform:translateY(16px) scale(.96);} to{opacity:1; transform:none;} }
+  .card-flip { perspective:1600px; margin-bottom:24px; cursor:pointer; animation:cardIn .4s cubic-bezier(.16,1,.3,1); }
+  .card-inner { position:relative; transition:transform .65s cubic-bezier(.2,.8,.2,1); transform-style:preserve-3d; min-height:280px; }
+  .card-inner.flipped { transform:rotateY(180deg); }
+  .face { position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:16px; padding:32px; min-height:280px; box-shadow:0 12px 30px rgba(15,23,42,.12); text-align:center; transition:box-shadow .3s; }
+  .card-flip:hover .face-front { box-shadow:0 18px 40px rgba(79,70,229,.22); }
+  .face-front { background:#fff; border:1px solid var(--slate-200); }
+  .face-back { background:linear-gradient(135deg,#eef2ff,#e0e7ff); border:1px solid #c7d2fe; transform:rotateY(180deg); }
+  .face .tag { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin-bottom:12px; }
+  .face-front .tag { color:#818cf8; } .face-back .tag { color:var(--indigo); }
+  .face-front .q { font-size:24px; font-weight:600; } .face-back .a { font-size:20px; color:var(--slate-700); }
+  .hint { margin-top:24px; font-size:13px; color:var(--slate-400); }
+  .rate { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .rate button { border-radius:12px; padding:16px; font-weight:700; color:#fff; box-shadow:0 2px 4px rgba(0,0,0,.1); }
+  .rate button span { display:block; font-size:12px; font-weight:400; opacity:.9; margin-top:2px; }
+  .r-hard{background:var(--rose);} .r-hard:hover{background:#e11d48;}
+  .r-medium{background:var(--amber);} .r-medium:hover{background:#d97706;}
+  .r-easy{background:var(--emerald);} .r-easy:hover{background:#059669;}
+  .reveal-btn { width:100%; border-radius:12px; padding:16px; font-weight:600; color:#fff; background:var(--slate-800); }
+  .done { text-align:center; padding:80px 0; }
+  .done .emoji { font-size:60px; margin-bottom:16px; } .done h2 { font-size:24px; margin-bottom:8px; } .done p { color:var(--slate-500); margin-bottom:24px; }
+
+  /* Fortschritts-/Verteilungsbalken (rot=schwer | gelb=mittel | grün=leicht | grau=neu) */
+  .bar { display:flex; width:100%; border-radius:999px; overflow:hidden; }
+  .bar-seg { height:100%; transition:width .4s ease; }
+  .bar-mini   { height:6px; margin-top:14px; background:rgba(255,255,255,.3); }
+  .bar-module { height:8px; background:var(--slate-200); }
+  .bar-study  { height:5px; background:var(--slate-200); border-radius:0; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--slate-500); margin:8px 2px 24px; }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  .legend i { width:10px; height:10px; border-radius:3px; display:inline-block; }
+
+  /* Modal */
+  .overlay { position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; padding:16px; }
+  .modal { width:100%; max-width:520px; background:#fff; border-radius:16px; padding:24px; box-shadow:0 25px 50px rgba(0,0,0,.25); }
+  .modal h2 { font-size:20px; font-weight:700; margin-bottom:16px; }
+  .field { margin-bottom:16px; } .field label { display:block; font-size:13px; font-weight:500; color:var(--slate-500); margin-bottom:4px; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
+  .modal-actions { display:flex; justify-content:flex-end; gap:12px; }
+
+  .fab { position:fixed; bottom:24px; right:24px; z-index:40; width:64px; height:64px; border-radius:999px; background:var(--indigo); color:#fff; font-size:32px; line-height:1; box-shadow:0 10px 25px rgba(79,70,229,.5); transition:transform .15s, background .15s; }
+  .fab:hover { transform:scale(1.1); background:var(--indigo-d); }
+</style>
+<!-- Firebase (optional, nur für Geräte-Sync; App läuft auch ohne) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* ============================================================
+   FIREBASE-SYNC EINRICHTEN (siehe Anleitung):
+   1) Trage unten deine Firebase-Projektdaten ein.
+   2) SPACE_ID = ein selbst gewählter Geheim-Code. Auf ALLEN
+      Geräten exakt derselbe Code -> selbe Daten überall.
+   Solange apiKey noch "DEIN_API_KEY" ist, läuft die App rein
+   lokal (LocalStorage), ohne Sync.
+   ============================================================ */
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyAYIy-qULloyvitOY1b2Btl4g0my_WQ4Hc",
+  authDomain:        "karteikarten-81f79.firebaseapp.com",
+  projectId:         "karteikarten-81f79",
+  storageBucket:     "karteikarten-81f79.firebasestorage.app",
+  messagingSenderId: "399960602806",
+  appId:             "1:399960602806:web:6ccfc2cdf00e33560cce17"
+};
+const SPACE_ID = "dilya-lern-9f3a-q7kx-2026";
+
+/* ---------- Konstanten & Helfer ---------- */
+const DAY = 24*60*60*1000;
+const HIDE = { hard:0, medium:1*DAY, easy:4*DAY };   // Pause je Bewertung
+const COLORS = ['c-indigo','c-emerald','c-rose','c-amber','c-sky','c-fuchsia'];
+const uid = () => Math.random().toString(36).slice(2,10);
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const isHidden = (c) => c.hiddenUntil && c.hiddenUntil > Date.now();
+const daysLeft = (c) => isHidden(c) ? Math.ceil((c.hiddenUntil - Date.now())/DAY) : 0;
+
+function loadDB() {
+  try { const v = localStorage.getItem('flashcards_db'); if (v) return JSON.parse(v); } catch(e){}
+  const m1=uid(), m2=uid();
+  return {
+    modules:[{id:m1,name:'Marketing',color:'c-indigo'},{id:m2,name:'Statistik',color:'c-emerald'}],
+    cards:[
+      {id:uid(),moduleId:m1,front:'Was sind die 4 P im Marketing-Mix?',back:'Product, Price, Place, Promotion',priority:'A',difficulty:null,lastReviewed:null,hiddenUntil:0},
+      {id:uid(),moduleId:m1,front:'Definiere "USP".',back:'Unique Selling Proposition – das Alleinstellungsmerkmal eines Produkts.',priority:'B',difficulty:null,lastReviewed:null,hiddenUntil:0},
+      {id:uid(),moduleId:m2,front:'Was misst die Standardabweichung?',back:'Die durchschnittliche Streuung der Werte um den Mittelwert.',priority:'A',difficulty:null,lastReviewed:null,hiddenUntil:0},
+    ]
+  };
+}
+
+/* ---------- Globaler Zustand ---------- */
+let db = loadDB();
+let state = {
+  view:'dashboard', moduleId:null,
+  priorityFilter:'all', difficultyFilter:'due',
+  studying:false, queue:[], revealed:false, doneCount:0,
+  modalOpen:false,
+};
+function save() { localStorage.setItem('flashcards_db', JSON.stringify(db)); pushToCloud(); }
+
+/* ---------- Firebase-Sync ---------- */
+let cloudDoc=null, applyingRemote=false, pushTimer=null, syncStatus='lokal';
+function badgeText(s){ return ({lokal:'• nur lokal', verbinde:'☁ verbinde…', online:'☁ synchron', fehler:'⚠ Sync-Fehler'})[s]||s; }
+function setSync(s){ syncStatus=s; const el=document.getElementById('syncBadge'); if(el) el.textContent=badgeText(s); }
+
+function initCloud(){
+  if (typeof firebase==='undefined' || !FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey==='DEIN_API_KEY'){ setSync('lokal'); return; }
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    cloudDoc = firebase.firestore().collection('flashcards').doc(SPACE_ID);
+    setSync('verbinde');
+    cloudDoc.onSnapshot(snap=>{
+      setSync('online');
+      if (snap.exists && snap.data() && snap.data().payload){
+        const remote = JSON.parse(snap.data().payload);
+        if (JSON.stringify(remote)!==JSON.stringify(db)){
+          applyingRemote=true;
+          db = remote;
+          localStorage.setItem('flashcards_db', JSON.stringify(db));
+          if (!state.modalOpen) render();   // Eingabe im Modal nicht unterbrechen
+          applyingRemote=false;
+        }
+      } else {
+        pushToCloud();                       // erstes Mal: lokale Daten in die Cloud
+      }
+    }, err=>{ console.error(err); setSync('fehler'); });
+  } catch(e){ console.error(e); setSync('fehler'); }
+}
+
+function pushToCloud(){
+  if (!cloudDoc || applyingRemote) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(()=>{
+    cloudDoc.set({ payload: JSON.stringify(db), updatedAt: Date.now() }).catch(e=>{ console.error(e); setSync('fehler'); });
+  }, 400);
+}
+
+/* ---------- Datenoperationen ---------- */
+function addModule(name) { db.modules.push({id:uid(),name,color:COLORS[db.modules.length%COLORS.length]}); save(); render(); }
+function deleteModule(id) {
+  if (!confirm('Modul und alle zugehörigen Karten löschen?')) return;
+  db.modules = db.modules.filter(m=>m.id!==id);
+  db.cards = db.cards.filter(c=>c.moduleId!==id);
+  state.view='dashboard'; state.moduleId=null; save(); render();
+}
+function addCard(card){ db.cards.push(card); save(); render(); }
+function deleteCard(id){ db.cards = db.cards.filter(c=>c.id!==id); save(); render(); }
+function rateCard(id, level){
+  const c = db.cards.find(x=>x.id===id);
+  if (c){ c.difficulty=level; c.lastReviewed=Date.now(); c.hiddenUntil=Date.now()+HIDE[level]; }
+  save();
+}
+
+/* ---------- Lern-Pool nach Filtern ---------- */
+function buildPool(){
+  const f = state.difficultyFilter;
+  return db.cards.filter(c=>{
+    if (c.moduleId!==state.moduleId) return false;
+    if (state.priorityFilter==='A' && c.priority!=='A') return false;
+    if (f==='due')      { if (isHidden(c)) return false; }     // nur fällige -> Pause zählt
+    else if (f==='all') { /* alles, auch pausierte */ }
+    else if (f==='new') { if (c.difficulty!==null) return false; }
+    else                { if (c.difficulty!==f) return false; } // hard/medium/easy: Pause wird ignoriert -> nie gesperrt
+    return true;
+  });
+}
+
+/* ---------- Statistik & Balken ---------- */
+function statsOf(moduleId){
+  const cs = db.cards.filter(c=>c.moduleId===moduleId);
+  const s = {hard:0, medium:0, easy:0, new:0, total:cs.length};
+  cs.forEach(c => c.difficulty ? s[c.difficulty]++ : s.new++);
+  return s;
+}
+function barHTML(moduleId, variant){
+  const s = statsOf(moduleId);
+  if (s.total===0) return `<div class="bar bar-${variant}"></div>`;
+  const pct = n => (n/s.total*100).toFixed(2);
+  const seg = (n,color) => n>0 ? `<div class="bar-seg" style="width:${pct(n)}%;background:${color}"></div>` : '';
+  return `<div class="bar bar-${variant}">
+    ${seg(s.hard,'var(--rose)')}
+    ${seg(s.medium,'var(--amber)')}
+    ${seg(s.easy,'var(--emerald)')}
+    ${seg(s.new,'rgba(148,163,184,.5)')}
+  </div>`;
+}
+
+/* ---------- Render ---------- */
+const root = document.getElementById('root');
+
+function render(){
+  const m = db.modules.find(x=>x.id===state.moduleId);
+  let body='';
+  if (state.view==='dashboard') body = viewDashboard();
+  else if (state.view==='module' && m) body = state.studying ? viewStudy(m) : viewModule(m);
+  else body = viewDashboard();
+
+  root.innerHTML = `
+    <header><div class="header-inner">
+      <button class="logo" id="goHome"><span style="font-size:24px">🃏</span> Karteikarten</button>
+      <span class="header-stats">${db.cards.length} Karten · ${db.modules.length} Module &nbsp;·&nbsp; <span id="syncBadge">${badgeText(syncStatus)}</span></span>
+    </div></header>
+    <main>${body}</main>
+    <button class="fab" id="fab">+</button>
+    ${state.modalOpen ? modalHTML(m) : ''}
+  `;
+  bind();
+}
+
+function viewDashboard(){
+  const tiles = db.modules.map(m=>{
+    const total = db.cards.filter(c=>c.moduleId===m.id).length;
+    const due = db.cards.filter(c=>c.moduleId===m.id && !isHidden(c)).length;
+    return `<div class="tile ${m.color}" data-open="${m.id}">
+      <button class="del" data-delmod="${m.id}">🗑</button>
+      <h2>${esc(m.name)}</h2>
+      <p class="c1">${total} Karten</p>
+      <p class="c2">${due} jetzt fällig</p>
+      ${barHTML(m.id,'mini')}
+    </div>`;
+  }).join('');
+  return `<div class="wrap">
+    <h1 class="page">Meine Module</h1>
+    <p class="sub">Wähle ein Modul oder lege ein neues an.</p>
+    <div class="grid">
+      ${tiles}
+      <div class="tile-new">
+        <input type="text" id="newModuleName" placeholder="Neues Modul…" style="margin-bottom:12px" />
+        <button class="btn btn-dark" id="addModuleBtn">+ Modul anlegen</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function diffBadge(d){
+  if (!d) return '<span class="badge b-new">Neu</span>';
+  const map={hard:['b-hard','Schwer'],medium:['b-medium','Mittel'],easy:['b-easy','Leicht']};
+  return `<span class="badge ${map[d][0]}">${map[d][1]}</span>`;
+}
+
+function viewModule(m){
+  const cards = db.cards.filter(c=>c.moduleId===m.id);
+  const pool = buildPool();
+  let rows;
+  if (cards.length===0) rows = '<p class="empty">Noch keine Karten – nutze den + Button unten rechts.</p>';
+  else if (pool.length===0) rows = '<p class="empty">Keine Karten für diesen Filter. Wähle z. B. „Alle (auch pausierte)".</p>';
+  else rows = pool.map(c=>`
+    <div class="row">
+      <span class="badge ${c.priority==='A'?'b-A':'b-B'}">${c.priority}</span>
+      <div class="txt"><div class="f">${esc(c.front)}</div><div class="b">${esc(c.back)}</div></div>
+      ${diffBadge(c.difficulty)}
+      ${isHidden(c)?`<span class="badge b-sleep">💤 ${daysLeft(c)} T</span>`:''}
+      <button class="del" data-delcard="${c.id}">🗑</button>
+    </div>`).join('');
+
+  const aCount = cards.filter(c=>c.priority==='A').length;
+  return `<div class="wrap wrap-narrow">
+    <button class="link-back" id="backDash">← Dashboard</button>
+    <div class="module-head ${m.color}">
+      <h1>${esc(m.name)}</h1>
+      <p>${cards.length} Karten · ${aCount} mit A-Priorität</p>
+    </div>
+    ${barHTML(m.id,'module')}
+    <div class="legend">
+      <span><i style="background:var(--rose)"></i>Schwer</span>
+      <span><i style="background:var(--amber)"></i>Mittel</span>
+      <span><i style="background:var(--emerald)"></i>Leicht</span>
+      <span><i style="background:rgba(148,163,184,.5)"></i>Neu</span>
+    </div>
+    <div class="filterbar">
+      <div>
+        <span class="flabel">Klausur-Filter</span>
+        <div class="toggle">
+          <button class="${state.priorityFilter==='all'?'on-indigo':''}" data-prio="all">Alle</button>
+          <button class="${state.priorityFilter==='A'?'on-rose':''}" data-prio="A">Nur A-Priorität</button>
+        </div>
+      </div>
+      <div>
+        <span class="flabel">Welche Karten wiederholen?</span>
+        <select id="diffFilter" style="width:auto">
+          <option value="due"${state.difficultyFilter==='due'?' selected':''}>Fällige (empfohlen)</option>
+          <option value="all"${state.difficultyFilter==='all'?' selected':''}>Alle (auch pausierte)</option>
+          <option value="new"${state.difficultyFilter==='new'?' selected':''}>Nur neue</option>
+          <option value="hard"${state.difficultyFilter==='hard'?' selected':''}>Nur schwere</option>
+          <option value="medium"${state.difficultyFilter==='medium'?' selected':''}>Nur mittlere</option>
+          <option value="easy"${state.difficultyFilter==='easy'?' selected':''}>Nur leichte</option>
+        </select>
+      </div>
+      <div style="margin-left:auto">
+        <button class="btn" id="startStudy" ${pool.length===0?'disabled':''}>▶ Lernsession starten (${pool.length})</button>
+      </div>
+    </div>
+    ${rows}
+  </div>`;
+}
+
+function viewStudy(m){
+  const card = db.cards.find(c=>c.id===state.queue[0]);
+  if (!card){
+    return `<div class="wrap wrap-narrow"><div class="done">
+      <div class="emoji">🎉</div>
+      <h2>Session abgeschlossen!</h2>
+      <p>${state.doneCount} Karten durchgearbeitet in „${esc(m.name)}".</p>
+      <button class="btn" id="exitStudy">Zurück zum Modul</button>
+    </div></div>`;
+  }
+  return `<div class="wrap wrap-narrow">
+    <div class="study-top">
+      <button class="btn-ghost" id="exitStudy">✕ Session beenden</button>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="badge ${card.priority==='A'?'b-A':'b-B'}">${card.priority}-Prio</span>
+        <span style="font-size:13px;color:var(--slate-500)">${state.queue.length} im Stapel</span>
+      </div>
+    </div>
+    <div class="card-flip" id="cardFlip">
+      <div class="card-inner" id="cardInner">
+        <div class="face face-front">
+          <span class="tag">Frage</span>
+          <p class="q">${esc(card.front)}</p>
+          <span class="hint">Klicken zum Aufdecken</span>
+        </div>
+        <div class="face face-back">
+          <span class="tag">Antwort</span>
+          <p class="a">${esc(card.back)}</p>
+        </div>
+      </div>
+    </div>
+    <div id="studyControls">${revealControlsHTML()}</div>
+    <div style="margin-top:28px">${barHTML(m.id,'study')}</div>
+  </div>`;
+}
+
+function revealControlsHTML(){ return `<button class="reveal-btn" id="revealBtn">Antwort aufdecken</button>`; }
+function rateControlsHTML(){ return `
+    <div class="rate">
+      <button class="r-hard" data-rate="hard">Schwer<span>kommt gleich wieder</span></button>
+      <button class="r-medium" data-rate="medium">Mittel<span>in 1 Tag</span></button>
+      <button class="r-easy" data-rate="easy">Leicht<span>in 4 Tagen</span></button>
+    </div>`; }
+
+function revealCard(){
+  if (state.revealed) return;
+  state.revealed = true;
+  const inner = document.getElementById('cardInner');
+  if (inner) inner.classList.add('flipped');           // nur drehen, kein Re-Render -> Animation läuft
+  const ctr = document.getElementById('studyControls');
+  if (ctr){
+    ctr.innerHTML = rateControlsHTML();
+    document.querySelectorAll('[data-rate]').forEach(el=>el.onclick=()=>doRate(el.dataset.rate));
+  }
+}
+
+function modalHTML(activeModule){
+  const opts = db.modules.map(m=>`<option value="${m.id}"${activeModule&&activeModule.id===m.id?' selected':''}>${esc(m.name)}</option>`).join('');
+  return `<div class="overlay" id="overlay">
+    <div class="modal" id="modalBox">
+      <h2>Neue Karteikarte</h2>
+      <div class="field"><label>Vorderseite (Frage / Konzept)</label><textarea id="mFront" rows="2"></textarea></div>
+      <div class="field"><label>Rückseite (Antwort / Erklärung)</label><textarea id="mBack" rows="3"></textarea></div>
+      <div class="two">
+        <div><label class="flabel" style="text-transform:none;font-size:13px;color:var(--slate-500)">Modul</label>
+          <select id="mModule">${opts || '<option value="">Erst Modul anlegen</option>'}</select></div>
+        <div><label class="flabel" style="text-transform:none;font-size:13px;color:var(--slate-500)">Klausurrelevanz</label>
+          <select id="mPrio"><option value="A">A-Priorität (sehr wichtig)</option><option value="B">B-Priorität (ergänzend)</option></select></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="modalCancel">Abbrechen</button>
+        <button class="btn" id="modalSave">Speichern</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- Bewertung in der Session ---------- */
+function doRate(level){
+  const id = state.queue[0];
+  rateCard(id, level);
+  state.revealed = false;
+  const rest = state.queue.slice(1);
+  if (level==='hard'){
+    const pos = Math.min(3, rest.length);           // "Schwer": zeitnah wieder einreihen
+    state.queue = [...rest.slice(0,pos), id, ...rest.slice(pos)];
+  } else {
+    state.queue = rest;                              // Mittel/Leicht: raus aus Session
+    state.doneCount++;
+  }
+  render();
+}
+
+/* ---------- Event-Bindung nach jedem Render ---------- */
+function bind(){
+  const $ = (id)=>document.getElementById(id);
+
+  $('goHome').onclick = ()=>{ state.view='dashboard'; state.moduleId=null; state.studying=false; render(); };
+  $('fab').onclick = ()=>{ state.modalOpen=true; render(); };
+
+  // Dashboard
+  document.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>{ state.view='module'; state.moduleId=el.dataset.open; state.studying=false; state.priorityFilter='all'; state.difficultyFilter='due'; render(); });
+  document.querySelectorAll('[data-delmod]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); deleteModule(el.dataset.delmod); });
+  if ($('addModuleBtn')) $('addModuleBtn').onclick = ()=>{ const v=$('newModuleName').value.trim(); if(v) addModule(v); };
+  if ($('newModuleName')) $('newModuleName').onkeydown = (e)=>{ if(e.key==='Enter'){ const v=e.target.value.trim(); if(v) addModule(v); } };
+
+  // Modul-Ansicht
+  if ($('backDash')) $('backDash').onclick = ()=>{ state.view='dashboard'; state.moduleId=null; render(); };
+  document.querySelectorAll('[data-prio]').forEach(el=>el.onclick=()=>{ state.priorityFilter=el.dataset.prio; render(); });
+  if ($('diffFilter')) $('diffFilter').onchange = (e)=>{ state.difficultyFilter=e.target.value; render(); };
+  document.querySelectorAll('[data-delcard]').forEach(el=>el.onclick=()=>deleteCard(el.dataset.delcard));
+  if ($('startStudy')) $('startStudy').onclick = ()=>{ const pool=buildPool(); if(!pool.length) return; state.studying=true; state.queue=pool.map(c=>c.id); state.revealed=false; state.doneCount=0; render(); };
+
+  // Lern-Session
+  if ($('cardFlip')) $('cardFlip').onclick = revealCard;
+  if ($('revealBtn')) $('revealBtn').onclick = revealCard;
+  document.querySelectorAll('[data-rate]').forEach(el=>el.onclick=()=>doRate(el.dataset.rate));
+  if ($('exitStudy')) $('exitStudy').onclick = ()=>{ state.studying=false; render(); };
+
+  // Modal
+  if (state.modalOpen){
+    const close=()=>{ state.modalOpen=false; render(); };
+    $('overlay').onclick = close;
+    $('modalBox').onclick = (e)=>e.stopPropagation();
+    $('modalCancel').onclick = close;
+    $('mFront').focus();
+    $('modalSave').onclick = ()=>{
+      const front=$('mFront').value.trim(), back=$('mBack').value.trim(), moduleId=$('mModule').value, priority=$('mPrio').value;
+      if(!front||!back||!moduleId) return;
+      addCard({id:uid(),moduleId,front,back,priority,difficulty:null,lastReviewed:null,hiddenUntil:0});
+      state.modalOpen=false; render();
+    };
+  }
+}
+
+render();
+initCloud();
+</script>
+</body>
+</html>
