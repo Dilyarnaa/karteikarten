@@ -107,6 +107,9 @@
   .r-medium{background:var(--amber);} .r-medium:hover{background:#d97706;}
   .r-easy{background:var(--emerald);} .r-easy:hover{background:#059669;}
   .reveal-btn { width:100%; border-radius:12px; padding:16px; font-weight:600; color:#fff; background:var(--slate-800); }
+  .explain-toggle { width:100%; border-radius:10px; padding:11px 16px; font-weight:600; color:#b45309; background:#fffbeb; border:1px solid #fde68a; }
+  .explain-toggle:hover { background:#fef3c7; }
+  .explain-box { margin-top:10px; background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:14px 16px; color:var(--slate-700); white-space:pre-wrap; text-align:left; line-height:1.5; }
   .done { text-align:center; padding:80px 0; }
   .done .emoji { font-size:60px; margin-bottom:16px; } .done h2 { font-size:24px; margin-bottom:8px; } .done p { color:var(--slate-500); margin-bottom:24px; }
 
@@ -339,7 +342,7 @@ function viewModule(m){
   else rows = pool.map(c=>`
     <div class="row">
       <span class="badge ${c.priority==='A'?'b-A':'b-B'}">${c.priority}</span>
-      <div class="txt"><div class="f">${esc(c.front)}</div><div class="b">${esc(c.back)}</div></div>
+      <div class="txt"><div class="f">${esc(c.front)}${c.explain?' 💡':''}</div><div class="b">${esc(c.back)}</div></div>
       ${diffBadge(c.difficulty)}
       ${isHidden(c)?`<span class="badge b-sleep">💤 ${daysLeft(c)} T</span>`:''}
       <button class="edit" data-editcard="${c.id}" title="Bearbeiten">✏️</button>
@@ -419,6 +422,10 @@ function viewStudy(m){
         </div>
       </div>
     </div>
+    ${card.explain ? `<div style="margin-bottom:16px">
+      <button class="explain-toggle" id="explainBtn">💡 Erklärung anzeigen</button>
+      <div id="explainBox" class="explain-box" style="display:none">${esc(card.explain)}</div>
+    </div>` : ''}
     <div id="studyControls">${revealControlsHTML()}</div>
     <div style="margin-top:28px">${barHTML(m.id,'study')}</div>
   </div>`;
@@ -469,6 +476,7 @@ function modalHTML(activeModule){
       <h2>${card?'Karte bearbeiten':'Neue Karteikarte'}</h2>
       <div class="field"><label>Vorderseite (Frage / Konzept)</label><textarea id="mFront" rows="2">${card?esc(card.front):''}</textarea></div>
       <div class="field"><label>Rückseite (Antwort / Erklärung)</label><textarea id="mBack" rows="3">${card?esc(card.back):''}</textarea></div>
+      <div class="field"><label>💡 Begriffs-Erklärung / Eselsbrücke (optional)</label><textarea id="mExplain" rows="2" placeholder="Z. B. was Fachbegriffe bedeuten – erscheint beim Lernen per 💡-Knopf">${card?esc(card.explain||''):''}</textarea></div>
       <div class="two">
         <div><label class="flabel" style="text-transform:none;font-size:13px;color:var(--slate-500)">Modul</label>
           <select id="mModule">${opts || '<option value="">Erst Modul anlegen</option>'}</select></div>
@@ -529,6 +537,11 @@ function bind(){
   if ($('cardFlip')) $('cardFlip').onclick = revealCard;
   if ($('revealBtn')) $('revealBtn').onclick = revealCard;
   if ($('cardInner')) fitCard();
+  if ($('explainBtn')) $('explainBtn').onclick = ()=>{
+    const b=$('explainBox'), open=b.style.display!=='none';
+    b.style.display = open?'none':'block';
+    $('explainBtn').textContent = open?'💡 Erklärung anzeigen':'💡 Erklärung ausblenden';
+  };
   document.querySelectorAll('[data-rate]').forEach(el=>el.onclick=()=>doRate(el.dataset.rate));
   if ($('exitStudy')) $('exitStudy').onclick = ()=>{ state.studying=false; render(); };
   if ($('editCurrent')) $('editCurrent').onclick = ()=>{ state.editId=state.queue[0]; state.revealed=false; state.modalOpen=true; render(); };
@@ -541,10 +554,10 @@ function bind(){
     $('modalCancel').onclick = close;
     $('mFront').focus();
     $('modalSave').onclick = ()=>{
-      const front=$('mFront').value.trim(), back=$('mBack').value.trim(), moduleId=$('mModule').value, priority=$('mPrio').value;
+      const front=$('mFront').value.trim(), back=$('mBack').value.trim(), explain=$('mExplain').value.trim(), moduleId=$('mModule').value, priority=$('mPrio').value;
       if(!front||!back||!moduleId) return;
-      if (state.editId) updateCard(state.editId, {front,back,moduleId,priority});
-      else addCard({id:uid(),moduleId,front,back,priority,difficulty:null,lastReviewed:null,hiddenUntil:0});
+      if (state.editId) updateCard(state.editId, {front,back,explain,moduleId,priority});
+      else addCard({id:uid(),moduleId,front,back,explain,priority,difficulty:null,lastReviewed:null,hiddenUntil:0});
       state.modalOpen=false; state.editId=null; render();
     };
   }
