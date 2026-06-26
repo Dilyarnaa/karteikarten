@@ -45,6 +45,7 @@
   .c-amber{background:linear-gradient(135deg,#f59e0b,#f97316);}
   .c-sky{background:linear-gradient(135deg,#0ea5e9,#06b6d4);}
   .c-fuchsia{background:linear-gradient(135deg,#d946ef,#a855f7);}
+  .c-star{background:linear-gradient(135deg,#eab308,#f59e0b);}
 
   input[type=text], select, textarea { width:100%; border:1px solid var(--slate-300); border-radius:8px; padding:10px; background:#fff; }
   input:focus, select:focus, textarea:focus { outline:none; border-color:var(--indigo); box-shadow:0 0 0 1px var(--indigo); }
@@ -83,6 +84,8 @@
   .row .del:hover { color:var(--rose); }
   .row .edit { background:none; font-size:15px; opacity:.55; }
   .row .edit:hover { opacity:1; }
+  .row .star { background:none; font-size:16px; opacity:.65; }
+  .row .star:hover { opacity:1; }
   .empty { text-align:center; color:var(--slate-400); padding:40px 0; }
 
   /* Study */
@@ -187,7 +190,7 @@ let db = loadDB();
 let state = {
   view:'dashboard', moduleId:null,
   priorityFilter:'all', difficultyFilter:'due',
-  studying:false, queue:[], revealed:false, doneCount:0, hardCount:{},
+  studying:false, queue:[], revealed:false, doneCount:0, hardCount:{}, studyTitle:'', studyBarIds:[],
   modalOpen:false, editId:null,
 };
 function save() { localStorage.setItem('flashcards_db', JSON.stringify(db)); pushToCloud(); }
@@ -240,6 +243,7 @@ function deleteModule(id) {
 function addCard(card){ db.cards.push(card); save(); render(); }
 function updateCard(id, fields){ const c=db.cards.find(x=>x.id===id); if(c) Object.assign(c, fields); save(); render(); }
 function deleteCard(id){ db.cards = db.cards.filter(c=>c.id!==id); save(); render(); }
+function toggleStar(id){ const c=db.cards.find(x=>x.id===id); if(c) c.starred=!c.starred; save(); render(); }
 function rateCard(id, level){
   const c = db.cards.find(x=>x.id===id);
   if (c){ c.difficulty=level; c.lastReviewed=Date.now(); c.hiddenUntil=Date.now()+HIDE[level]; }
@@ -261,14 +265,13 @@ function buildPool(){
 }
 
 /* ---------- Statistik & Balken ---------- */
-function statsOf(moduleId){
-  const cs = db.cards.filter(c=>c.moduleId===moduleId);
+function statsOfCards(cs){
   const s = {hard:0, medium:0, easy:0, new:0, total:cs.length};
   cs.forEach(c => c.difficulty ? s[c.difficulty]++ : s.new++);
   return s;
 }
-function barHTML(moduleId, variant){
-  const s = statsOf(moduleId);
+function barHTML(cards, variant){
+  const s = statsOfCards(cards);
   if (s.total===0) return `<div class="bar bar-${variant}"></div>`;
   const pct = n => (n/s.total*100).toFixed(2);
   const seg = (n,color) => n>0 ? `<div class="bar-seg" style="width:${pct(n)}%;background:${color}"></div>` : '';
@@ -286,8 +289,10 @@ const root = document.getElementById('root');
 function render(){
   const m = db.modules.find(x=>x.id===state.moduleId);
   let body='';
-  if (state.view==='dashboard') body = viewDashboard();
-  else if (state.view==='module' && m) body = state.studying ? viewStudy(m) : viewModule(m);
+  if (state.studying) body = viewStudy();
+  else if (state.view==='dashboard') body = viewDashboard();
+  else if (state.view==='favorites') body = viewFavorites();
+  else if (state.view==='module' && m) body = viewModule(m);
   else body = viewDashboard();
 
   root.innerHTML = `
@@ -311,13 +316,20 @@ function viewDashboard(){
       <h2>${esc(m.name)}</h2>
       <p class="c1">${total} Karten</p>
       <p class="c2">${due} jetzt fällig</p>
-      ${barHTML(m.id,'mini')}
+      ${barHTML(db.cards.filter(c=>c.moduleId===m.id),'mini')}
     </div>`;
   }).join('');
+  const favCount = db.cards.filter(c=>c.starred).length;
+  const favTile = `<div class="tile c-star" data-favorites="1">
+      <h2>⭐ Markiert</h2>
+      <p class="c1">${favCount} Karten</p>
+      <p class="c2">Modulübergreifend gesammelt</p>
+    </div>`;
   return `<div class="wrap">
     <h1 class="page">Meine Module</h1>
     <p class="sub">Wähle ein Modul oder lege ein neues an.</p>
     <div class="grid">
+      ${favTile}
       ${tiles}
       <div class="tile-new">
         <input type="text" id="newModuleName" placeholder="Neues Modul…" style="margin-bottom:12px" />
@@ -345,6 +357,7 @@ function viewModule(m){
       <div class="txt"><div class="f">${esc(c.front)}${c.explain?' 💡':''}</div><div class="b">${esc(c.back)}</div></div>
       ${diffBadge(c.difficulty)}
       ${isHidden(c)?`<span class="badge b-sleep">💤 ${daysLeft(c)} T</span>`:''}
+      <button class="star" data-star="${c.id}" title="Markieren">${c.starred?'⭐':'☆'}</button>
       <button class="edit" data-editcard="${c.id}" title="Bearbeiten">✏️</button>
       <button class="del" data-delcard="${c.id}">🗑</button>
     </div>`).join('');
@@ -356,7 +369,7 @@ function viewModule(m){
       <h1>${esc(m.name)}</h1>
       <p>${cards.length} Karten · ${aCount} mit A-Priorität</p>
     </div>
-    ${barHTML(m.id,'module')}
+    ${barHTML(cards,'module')}
     <div class="legend">
       <span><i style="background:var(--rose)"></i>Schwer</span>
       <span><i style="background:var(--amber)"></i>Mittel</span>
@@ -390,20 +403,22 @@ function viewModule(m){
   </div>`;
 }
 
-function viewStudy(m){
+function viewStudy(){
   const card = db.cards.find(c=>c.id===state.queue[0]);
   if (!card){
     return `<div class="wrap wrap-narrow"><div class="done">
       <div class="emoji">🎉</div>
       <h2>Session abgeschlossen!</h2>
-      <p>${state.doneCount} Karten durchgearbeitet in „${esc(m.name)}".</p>
-      <button class="btn" id="exitStudy">Zurück zum Modul</button>
+      <p>${state.doneCount} Karten durchgearbeitet in „${esc(state.studyTitle||'')}".</p>
+      <button class="btn" id="exitStudy">Zurück</button>
     </div></div>`;
   }
+  const barCards = (state.studyBarIds||[]).map(id=>db.cards.find(c=>c.id===id)).filter(Boolean);
   return `<div class="wrap wrap-narrow">
     <div class="study-top">
       <button class="btn-ghost" id="exitStudy">✕ Session beenden</button>
       <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn-ghost" id="starCurrent" title="Markieren" style="padding:4px 8px;font-size:18px">${card.starred?'⭐':'☆'}</button>
         <button class="btn-ghost" id="editCurrent" title="Diese Karte bearbeiten" style="padding:4px 8px;font-size:16px">✏️</button>
         <span class="badge ${card.priority==='A'?'b-A':'b-B'}">${card.priority}-Prio</span>
         <span style="font-size:13px;color:var(--slate-500)">${state.queue.length} im Stapel</span>
@@ -427,7 +442,41 @@ function viewStudy(m){
       <div id="explainBox" class="explain-box" style="display:none">${esc(card.explain)}</div>
     </div>` : ''}
     <div id="studyControls">${revealControlsHTML()}</div>
-    <div style="margin-top:28px">${barHTML(m.id,'study')}</div>
+    <div style="margin-top:28px">${barHTML(barCards,'study')}</div>
+  </div>`;
+}
+
+function viewFavorites(){
+  const cards = db.cards.filter(c=>c.starred);
+  const modName = id => { const m=db.modules.find(x=>x.id===id); return m?m.name:'—'; };
+  let rows;
+  if (cards.length===0) rows = '<p class="empty">Noch nichts markiert. Tippe bei einer Karte auf ☆, um sie hier zu sammeln.</p>';
+  else rows = cards.map(c=>`
+    <div class="row">
+      <span class="badge ${c.priority==='A'?'b-A':'b-B'}">${c.priority}</span>
+      <div class="txt"><div class="f">${esc(c.front)}${c.explain?' 💡':''}</div><div class="b">${esc(modName(c.moduleId))} · ${esc(c.back)}</div></div>
+      ${diffBadge(c.difficulty)}
+      <button class="star" data-star="${c.id}" title="Markierung entfernen">⭐</button>
+      <button class="edit" data-editcard="${c.id}" title="Bearbeiten">✏️</button>
+      <button class="del" data-delcard="${c.id}">🗑</button>
+    </div>`).join('');
+  return `<div class="wrap wrap-narrow">
+    <button class="link-back" id="backDash">← Dashboard</button>
+    <div class="module-head c-star">
+      <h1>⭐ Markiert</h1>
+      <p>${cards.length} Karten – deine wichtigen Sachen, modulübergreifend</p>
+    </div>
+    ${barHTML(cards,'module')}
+    <div class="legend">
+      <span><i style="background:var(--rose)"></i>Schwer</span>
+      <span><i style="background:var(--amber)"></i>Mittel</span>
+      <span><i style="background:var(--emerald)"></i>Leicht</span>
+      <span><i style="background:rgba(148,163,184,.5)"></i>Neu</span>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:24px">
+      <button class="btn" id="startFav" ${cards.length===0?'disabled':''}>▶ Markierte lernen (${cards.length})</button>
+    </div>
+    ${rows}
   </div>`;
 }
 
@@ -454,15 +503,19 @@ function fitCard(){
   fitText(inner.querySelector('.face-back'),  inner.querySelector('.a'), 20, 12);
 }
 
-function revealCard(){
-  if (state.revealed) return;
-  state.revealed = true;
+function flipCard(){
+  state.revealed = !state.revealed;                    // umschalten: auf / wieder zu
   const inner = document.getElementById('cardInner');
-  if (inner) inner.classList.add('flipped');           // nur drehen, kein Re-Render -> Animation läuft
+  if (inner) inner.classList.toggle('flipped', state.revealed);   // dreht hin und zurück, Animation läuft
   const ctr = document.getElementById('studyControls');
-  if (ctr){
+  if (!ctr) return;
+  if (state.revealed){
     ctr.innerHTML = rateControlsHTML();
-    document.querySelectorAll('[data-rate]').forEach(el=>el.onclick=()=>doRate(el.dataset.rate));
+    ctr.querySelectorAll('[data-rate]').forEach(el=>el.onclick=()=>doRate(el.dataset.rate));
+  } else {
+    ctr.innerHTML = revealControlsHTML();
+    const rb = document.getElementById('revealBtn');
+    if (rb) rb.onclick = flipCard;
   }
 }
 
@@ -521,6 +574,7 @@ function bind(){
 
   // Dashboard
   document.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>{ state.view='module'; state.moduleId=el.dataset.open; state.studying=false; state.priorityFilter='all'; state.difficultyFilter='due'; render(); });
+  document.querySelectorAll('[data-favorites]').forEach(el=>el.onclick=()=>{ state.view='favorites'; state.studying=false; render(); });
   document.querySelectorAll('[data-delmod]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); deleteModule(el.dataset.delmod); });
   if ($('addModuleBtn')) $('addModuleBtn').onclick = ()=>{ const v=$('newModuleName').value.trim(); if(v) addModule(v); };
   if ($('newModuleName')) $('newModuleName').onkeydown = (e)=>{ if(e.key==='Enter'){ const v=e.target.value.trim(); if(v) addModule(v); } };
@@ -531,11 +585,13 @@ function bind(){
   if ($('diffFilter')) $('diffFilter').onchange = (e)=>{ state.difficultyFilter=e.target.value; render(); };
   document.querySelectorAll('[data-delcard]').forEach(el=>el.onclick=()=>deleteCard(el.dataset.delcard));
   document.querySelectorAll('[data-editcard]').forEach(el=>el.onclick=()=>{ state.editId=el.dataset.editcard; state.modalOpen=true; render(); });
-  if ($('startStudy')) $('startStudy').onclick = ()=>{ const pool=buildPool(); if(!pool.length) return; state.studying=true; state.queue=pool.map(c=>c.id); state.revealed=false; state.doneCount=0; state.hardCount={}; render(); };
+  document.querySelectorAll('[data-star]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); toggleStar(el.dataset.star); });
+  if ($('startStudy')) $('startStudy').onclick = ()=>{ const pool=buildPool(); if(!pool.length) return; const mod=db.modules.find(x=>x.id===state.moduleId); state.studying=true; state.queue=pool.map(c=>c.id); state.studyTitle=mod?mod.name:''; state.studyBarIds=db.cards.filter(c=>c.moduleId===state.moduleId).map(c=>c.id); state.revealed=false; state.doneCount=0; state.hardCount={}; render(); };
+  if ($('startFav')) $('startFav').onclick = ()=>{ const pool=db.cards.filter(c=>c.starred); if(!pool.length) return; state.studying=true; state.queue=pool.map(c=>c.id); state.studyTitle='⭐ Markiert'; state.studyBarIds=pool.map(c=>c.id); state.revealed=false; state.doneCount=0; state.hardCount={}; render(); };
 
   // Lern-Session
-  if ($('cardFlip')) $('cardFlip').onclick = revealCard;
-  if ($('revealBtn')) $('revealBtn').onclick = revealCard;
+  if ($('cardFlip')) $('cardFlip').onclick = flipCard;
+  if ($('revealBtn')) $('revealBtn').onclick = flipCard;
   if ($('cardInner')) fitCard();
   if ($('explainBtn')) $('explainBtn').onclick = ()=>{
     const b=$('explainBox'), open=b.style.display!=='none';
@@ -545,6 +601,7 @@ function bind(){
   document.querySelectorAll('[data-rate]').forEach(el=>el.onclick=()=>doRate(el.dataset.rate));
   if ($('exitStudy')) $('exitStudy').onclick = ()=>{ state.studying=false; render(); };
   if ($('editCurrent')) $('editCurrent').onclick = ()=>{ state.editId=state.queue[0]; state.revealed=false; state.modalOpen=true; render(); };
+  if ($('starCurrent')) $('starCurrent').onclick = ()=>{ const c=db.cards.find(x=>x.id===state.queue[0]); if(!c) return; c.starred=!c.starred; save(); $('starCurrent').textContent=c.starred?'⭐':'☆'; };
 
   // Modal
   if (state.modalOpen){
