@@ -57,6 +57,7 @@
   .btn-dark { background:var(--slate-800); } .btn-dark:hover{ background:#0f172a; }
   .btn-ghost { background:none; color:var(--slate-500); padding:8px 16px; font-weight:500; }
   .btn-ghost:hover { color:var(--slate-800); }
+  .btn-ghost:disabled { opacity:.35; cursor:not-allowed; }
   .link-back { background:none; color:var(--slate-500); font-size:14px; font-weight:500; margin-bottom:16px; }
   .link-back:hover { color:var(--slate-800); }
 
@@ -134,6 +135,34 @@
   .two { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
   .modal-actions { display:flex; justify-content:flex-end; gap:12px; }
 
+  /* Probeprüfung */
+  .btn-exam { background:#7c3aed; } .btn-exam:hover { background:#6d28db; }
+  .setup-card { background:#fff; border:1px solid var(--slate-200); border-radius:16px; padding:24px; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+  .setup-card h3 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--slate-400); margin-bottom:10px; }
+  .toggle-grid { display:flex; flex-wrap:wrap; gap:8px; }
+  .opt { border:1px solid var(--slate-300); background:#fff; color:var(--slate-700); border-radius:10px; padding:10px 16px; font-weight:600; }
+  .opt:hover { border-color:var(--indigo); }
+  .opt-on { background:var(--indigo); color:#fff; border-color:var(--indigo); }
+  .exam-question { background:#fff; border:1px solid var(--slate-200); border-radius:16px; padding:24px; box-shadow:0 4px 10px rgba(15,23,42,.06); margin-bottom:16px; text-align:center; }
+  .exam-question p { font-size:22px; font-weight:600; white-space:pre-wrap; margin-top:6px; }
+  .exam-opts { display:flex; flex-direction:column; gap:10px; }
+  .exam-opt { text-align:left; border:1px solid var(--slate-300); background:#fff; border-radius:12px; padding:14px 16px; font-size:15px; font-weight:500; color:var(--slate-700); white-space:pre-wrap; }
+  .exam-opt:hover:not(:disabled) { border-color:var(--indigo); background:#f5f3ff; }
+  .exam-opt:disabled { cursor:default; }
+  .exam-correct { background:#d1fae5 !important; border-color:#10b981 !important; color:#065f46 !important; }
+  .exam-wrong { background:#ffe4e6 !important; border-color:#f43f5e !important; color:#9f1239 !important; }
+  .exam-solution { background:linear-gradient(135deg,#eef2ff,#e0e7ff); border:1px solid #c7d2fe; border-radius:12px; padding:18px; margin-bottom:14px; text-align:center; }
+  .exam-solution p { font-size:18px; color:var(--slate-700); white-space:pre-wrap; margin-top:6px; }
+  .exam-grade { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .exam-grade button { border-radius:12px; padding:16px; font-weight:700; color:#fff; }
+  .exam-timer-badge { background:var(--slate-800); color:#fff; border-radius:999px; padding:5px 14px; font-weight:700; font-size:14px; }
+  .exam-progressbar { height:6px; background:var(--slate-200); border-radius:999px; overflow:hidden; margin-bottom:18px; }
+  .exam-progressbar > div { height:100%; background:var(--indigo); transition:width .3s; }
+  .exam-score { font-size:36px; font-weight:800; color:var(--slate-800); margin:6px 0; }
+  .exam-pct { font-size:18px; color:var(--slate-500); margin-bottom:10px; }
+  .exam-wrong-list { text-align:left; margin-top:22px; }
+  .exam-wrong-list h3 { font-size:14px; color:var(--rose); margin-bottom:8px; }
+
   .fab { position:fixed; bottom:24px; right:24px; z-index:40; width:64px; height:64px; border-radius:999px; background:var(--indigo); color:#fff; font-size:32px; line-height:1; box-shadow:0 10px 25px rgba(79,70,229,.5); transition:transform .15s, background .15s; }
   .fab:hover { transform:scale(1.1); background:var(--indigo-d); }
 </style>
@@ -192,7 +221,9 @@ let state = {
   priorityFilter:'all', difficultyFilter:'due',
   studying:false, queue:[], revealed:false, doneCount:0, hardCount:{}, studyTitle:'', studyBarIds:[],
   modalOpen:false, editId:null,
+  examDuration:30, examType:'mixed', exam:null,
 };
+let examTimer = null;
 function save() { localStorage.setItem('flashcards_db', JSON.stringify(db)); pushToCloud(); }
 
 /* ---------- Firebase-Sync ---------- */
@@ -289,7 +320,9 @@ const root = document.getElementById('root');
 function render(){
   const m = db.modules.find(x=>x.id===state.moduleId);
   let body='';
-  if (state.studying) body = viewStudy();
+  if (state.exam) body = viewExam();
+  else if (state.studying) body = viewStudy();
+  else if (state.view==='examSetup' && m) body = viewExamSetup(m);
   else if (state.view==='dashboard') body = viewDashboard();
   else if (state.view==='favorites') body = viewFavorites();
   else if (state.view==='module' && m) body = viewModule(m);
@@ -395,7 +428,8 @@ function viewModule(m){
           <option value="easy"${state.difficultyFilter==='easy'?' selected':''}>Nur leichte</option>
         </select>
       </div>
-      <div style="margin-left:auto">
+      <div style="margin-left:auto;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-exam" id="startExamSetup" ${cards.length===0?'disabled':''}>📝 Probeprüfung</button>
         <button class="btn" id="startStudy" ${pool.length===0?'disabled':''}>▶ Lernsession starten (${pool.length})</button>
       </div>
     </div>
@@ -416,7 +450,10 @@ function viewStudy(){
   const barCards = (state.studyBarIds||[]).map(id=>db.cards.find(c=>c.id===id)).filter(Boolean);
   return `<div class="wrap wrap-narrow">
     <div class="study-top">
-      <button class="btn-ghost" id="exitStudy">✕ Session beenden</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn-ghost" id="exitStudy">✕ Session beenden</button>
+        <button class="btn-ghost" id="skipCard" title="Frage überspringen" ${state.queue.length<=1?'disabled':''}>⏭ Überspringen</button>
+      </div>
       <div style="display:flex;align-items:center;gap:12px">
         <button class="btn-ghost" id="starCurrent" title="Markieren" style="padding:4px 8px;font-size:18px">${card.starred?'⭐':'☆'}</button>
         <button class="btn-ghost" id="editCurrent" title="Diese Karte bearbeiten" style="padding:4px 8px;font-size:16px">✏️</button>
@@ -544,6 +581,14 @@ function modalHTML(activeModule){
   </div>`;
 }
 
+/* ---------- Frage überspringen: ungewertet ans Ende ---------- */
+function skipCard(){
+  const [head, ...rest] = state.queue;
+  state.queue = [...rest, head];
+  state.revealed = false;
+  render();
+}
+
 /* ---------- Bewertung in der Session ---------- */
 function doRate(level){
   const id = state.queue[0];
@@ -565,11 +610,156 @@ function doRate(level){
   render();
 }
 
+/* ---------- Probeprüfung ---------- */
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function fmtTime(ms){ const s=Math.max(0,Math.floor(ms/1000)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+
+function startExam(){
+  const m = db.modules.find(x=>x.id===state.moduleId); if(!m) return;
+  const pool = db.cards.filter(c=>c.moduleId===m.id); if(!pool.length) return;
+  state.exam = {
+    moduleId:m.id, moduleName:m.name, type:state.examType,
+    queue:shuffle(pool.map(c=>c.id)), idx:0,
+    endsAt:Date.now()+state.examDuration*60000, durationMin:state.examDuration,
+    results:[], revealed:false, picked:null, options:null, qType:null, finished:false, finishedAt:0,
+  };
+  prepQuestion();
+  startExamTimer();
+  render();
+}
+function prepQuestion(){
+  const ex=state.exam; if(!ex) return;
+  ex.revealed=false; ex.picked=null; ex.options=null;
+  const card=db.cards.find(c=>c.id===ex.queue[ex.idx]); if(!card) return;
+  let qType = ex.type==='mixed' ? (Math.random()<0.5?'quiz':'open') : ex.type;
+  if (qType==='quiz'){
+    const distract = shuffle(db.cards.filter(c=>c.moduleId===ex.moduleId && c.id!==card.id && c.back.trim()!==card.back.trim()));
+    if (distract.length===0) qType='open';                 // keine falschen Optionen möglich -> offen
+    else ex.options = shuffle([{text:card.back,correct:true}, ...distract.slice(0,3).map(c=>({text:c.back,correct:false}))]);
+  }
+  ex.qType=qType;
+}
+function answerQuiz(i){
+  const ex=state.exam; if(!ex||ex.picked!=null) return;
+  ex.picked=i;
+  ex.results.push({id:ex.queue[ex.idx], correct:!!(ex.options[i]&&ex.options[i].correct)});
+  render();
+}
+function revealExamAnswer(){ if(state.exam){ state.exam.revealed=true; render(); } }
+function gradeOpen(correct){
+  const ex=state.exam; if(!ex) return;
+  ex.results.push({id:ex.queue[ex.idx], correct});
+  nextExamQuestion();
+}
+function nextExamQuestion(){
+  const ex=state.exam; if(!ex) return;
+  ex.idx++;
+  if (ex.idx>=ex.queue.length){ finishExam(); return; }
+  prepQuestion(); render();
+}
+function finishExam(){ const ex=state.exam; if(!ex) return; ex.finished=true; ex.finishedAt=Date.now(); stopExamTimer(); render(); }
+function exitExam(){ stopExamTimer(); state.exam=null; state.view='module'; render(); }
+function startExamTimer(){ stopExamTimer(); examTimer=setInterval(examTick,1000); }
+function stopExamTimer(){ if(examTimer){ clearInterval(examTimer); examTimer=null; } }
+function examTick(){
+  const ex=state.exam;
+  if(!ex||ex.finished){ stopExamTimer(); return; }
+  if (ex.endsAt-Date.now()<=0){ finishExam(); return; }
+  const el=document.getElementById('examTimer'); if(el) el.textContent=fmtTime(ex.endsAt-Date.now());
+}
+
+function viewExamSetup(m){
+  const total = db.cards.filter(c=>c.moduleId===m.id).length;
+  const durBtn = d => `<button class="opt ${state.examDuration===d?'opt-on':''}" data-dur="${d}">${d} Min</button>`;
+  const typeBtn = (v,l) => `<button class="opt ${state.examType===v?'opt-on':''}" data-type="${v}">${l}</button>`;
+  return `<div class="wrap wrap-narrow">
+    <button class="link-back" id="backModule">← Zurück</button>
+    <div class="module-head ${m.color}"><h1>📝 Probeprüfung</h1><p>${esc(m.name)} · ${total} Karten verfügbar</p></div>
+    <div class="setup-card">
+      <h3>Dauer</h3>
+      <div class="toggle-grid">${[15,30,45,60].map(durBtn).join('')}</div>
+      <div style="margin-top:12px">
+        <label class="flabel" style="text-transform:none;font-size:13px">Eigene Dauer (Minuten)</label>
+        <input type="number" id="durCustom" min="1" max="240" value="${state.examDuration}" style="width:130px">
+      </div>
+      <h3 style="margin-top:24px">Fragetyp</h3>
+      <div class="toggle-grid">
+        ${typeBtn('quiz','Quiz (Multiple Choice)')}
+        ${typeBtn('open','Offene Fragen')}
+        ${typeBtn('mixed','Gemischt')}
+      </div>
+      <button class="btn" id="startExam" style="margin-top:24px;width:100%" ${total===0?'disabled':''}>Prüfung starten</button>
+      ${total<4?'<p style="font-size:12px;color:var(--slate-500);margin-top:10px">Hinweis: Für Multiple-Choice braucht es mehrere Karten (für falsche Antwortmöglichkeiten). Bei zu wenigen werden automatisch offene Fragen genutzt.</p>':''}
+    </div>
+  </div>`;
+}
+
+function viewExam(){
+  const ex=state.exam;
+  if (ex.finished) return viewExamResult();
+  const card=db.cards.find(c=>c.id===ex.queue[ex.idx]);
+  if(!card) return viewExamResult();
+  const rem=ex.endsAt-Date.now();
+  let area='';
+  if (ex.qType==='quiz'){
+    area = `<div class="exam-opts">` + ex.options.map((o,i)=>{
+      let cls='exam-opt';
+      if (ex.picked!=null){ if(o.correct) cls+=' exam-correct'; else if(i===ex.picked) cls+=' exam-wrong'; }
+      return `<button class="${cls}" data-quizopt="${i}" ${ex.picked!=null?'disabled':''}>${esc(o.text)}</button>`;
+    }).join('') + `</div>`;
+    if (ex.picked!=null) area += `<button class="btn" id="examNext" style="width:100%;margin-top:14px">Weiter →</button>`;
+  } else {
+    if (!ex.revealed) area = `<button class="reveal-btn" id="examReveal">Lösung anzeigen</button>`;
+    else area = `<div class="exam-solution"><span class="tag" style="color:var(--indigo)">Lösung</span><p>${esc(card.back)}</p></div>
+      <p style="text-align:center;color:var(--slate-500);font-size:13px;margin-bottom:10px">Hast du es gewusst?</p>
+      <div class="exam-grade">
+        <button class="r-hard" data-grade="0">✗ Falsch</button>
+        <button class="r-easy" data-grade="1">✓ Richtig</button>
+      </div>`;
+  }
+  return `<div class="wrap wrap-narrow">
+    <div class="study-top">
+      <button class="btn-ghost" id="exitExam">✕ Abbrechen</button>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="exam-timer-badge">⏱ <span id="examTimer">${fmtTime(rem)}</span></span>
+        <span style="font-size:13px;color:var(--slate-500)">Frage ${ex.idx+1} / ${ex.queue.length}</span>
+      </div>
+    </div>
+    <div class="exam-progressbar"><div style="width:${(ex.idx/ex.queue.length*100).toFixed(1)}%"></div></div>
+    <div class="exam-question">
+      <span class="tag" style="color:#818cf8">${ex.qType==='quiz'?'Quizfrage':'Offene Frage'}</span>
+      <p>${esc(card.front)}</p>
+    </div>
+    ${area}
+  </div>`;
+}
+
+function viewExamResult(){
+  const ex=state.exam;
+  const correct=ex.results.filter(r=>r.correct).length, answered=ex.results.length;
+  const pct = answered ? Math.round(correct/answered*100) : 0;
+  const usedMs = ex.durationMin*60000 - (ex.endsAt-(ex.finishedAt||Date.now()));
+  const wrong = ex.results.filter(r=>!r.correct).map(r=>db.cards.find(c=>c.id===r.id)).filter(Boolean);
+  const grade = pct>=90?'🏆 Sehr gut!':pct>=75?'👍 Gut!':pct>=50?'🙂 Geht so':'📚 Üben!';
+  return `<div class="wrap wrap-narrow"><div class="done" style="padding:40px 0">
+    <div class="emoji">${pct>=75?'🎉':'📊'}</div>
+    <h2>Probeprüfung beendet</h2>
+    <div class="exam-score">${correct} / ${answered} richtig</div>
+    <div class="exam-pct">${pct}% · ${grade}</div>
+    <p>Zeit gebraucht: ${fmtTime(usedMs)} von ${ex.durationMin} Min</p>
+    ${wrong.length?`<div class="exam-wrong-list"><h3>Falsch beantwortet (${wrong.length})</h3>${wrong.map(c=>`<div class="row"><div class="txt"><div class="f">${esc(c.front)}</div><div class="b">${esc(c.back)}</div></div></div>`).join('')}</div>`:''}
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:24px">
+      <button class="btn btn-dark" id="examAgain">Nochmal</button>
+      <button class="btn" id="examDone">Zurück zum Modul</button>
+    </div>
+  </div></div>`;
+}
+
 /* ---------- Event-Bindung nach jedem Render ---------- */
 function bind(){
   const $ = (id)=>document.getElementById(id);
 
-  $('goHome').onclick = ()=>{ state.view='dashboard'; state.moduleId=null; state.studying=false; render(); };
+  $('goHome').onclick = ()=>{ stopExamTimer(); state.exam=null; state.view='dashboard'; state.moduleId=null; state.studying=false; render(); };
   $('fab').onclick = ()=>{ state.editId=null; state.modalOpen=true; render(); };
 
   // Dashboard
@@ -589,6 +779,21 @@ function bind(){
   if ($('startStudy')) $('startStudy').onclick = ()=>{ const pool=buildPool(); if(!pool.length) return; const mod=db.modules.find(x=>x.id===state.moduleId); state.studying=true; state.queue=pool.map(c=>c.id); state.studyTitle=mod?mod.name:''; state.studyBarIds=db.cards.filter(c=>c.moduleId===state.moduleId).map(c=>c.id); state.revealed=false; state.doneCount=0; state.hardCount={}; render(); };
   if ($('startFav')) $('startFav').onclick = ()=>{ const pool=db.cards.filter(c=>c.starred); if(!pool.length) return; state.studying=true; state.queue=pool.map(c=>c.id); state.studyTitle='⭐ Markiert'; state.studyBarIds=pool.map(c=>c.id); state.revealed=false; state.doneCount=0; state.hardCount={}; render(); };
 
+  // Probeprüfung
+  if ($('startExamSetup')) $('startExamSetup').onclick = ()=>{ state.view='examSetup'; render(); };
+  if ($('backModule')) $('backModule').onclick = ()=>{ state.view='module'; render(); };
+  document.querySelectorAll('[data-dur]').forEach(el=>el.onclick=()=>{ state.examDuration=+el.dataset.dur; render(); });
+  if ($('durCustom')) $('durCustom').onchange = (e)=>{ let v=parseInt(e.target.value)||30; state.examDuration=Math.max(1,Math.min(240,v)); render(); };
+  document.querySelectorAll('[data-type]').forEach(el=>el.onclick=()=>{ state.examType=el.dataset.type; render(); });
+  if ($('startExam')) $('startExam').onclick = startExam;
+  if ($('exitExam')) $('exitExam').onclick = exitExam;
+  document.querySelectorAll('[data-quizopt]').forEach(el=>el.onclick=()=>answerQuiz(+el.dataset.quizopt));
+  if ($('examNext')) $('examNext').onclick = nextExamQuestion;
+  if ($('examReveal')) $('examReveal').onclick = revealExamAnswer;
+  document.querySelectorAll('[data-grade]').forEach(el=>el.onclick=()=>gradeOpen(el.dataset.grade==='1'));
+  if ($('examAgain')) $('examAgain').onclick = ()=>{ stopExamTimer(); state.exam=null; state.view='examSetup'; render(); };
+  if ($('examDone')) $('examDone').onclick = ()=>{ stopExamTimer(); state.exam=null; state.view='module'; render(); };
+
   // Lern-Session
   if ($('cardFlip')) $('cardFlip').onclick = flipCard;
   if ($('revealBtn')) $('revealBtn').onclick = flipCard;
@@ -600,6 +805,7 @@ function bind(){
   };
   document.querySelectorAll('[data-rate]').forEach(el=>el.onclick=()=>doRate(el.dataset.rate));
   if ($('exitStudy')) $('exitStudy').onclick = ()=>{ state.studying=false; render(); };
+  if ($('skipCard')) $('skipCard').onclick = skipCard;
   if ($('editCurrent')) $('editCurrent').onclick = ()=>{ state.editId=state.queue[0]; state.revealed=false; state.modalOpen=true; render(); };
   if ($('starCurrent')) $('starCurrent').onclick = ()=>{ const c=db.cards.find(x=>x.id===state.queue[0]); if(!c) return; c.starred=!c.starred; save(); $('starCurrent').textContent=c.starred?'⭐':'☆'; };
 
