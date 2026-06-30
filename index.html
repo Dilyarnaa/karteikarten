@@ -154,7 +154,11 @@
   .exam-solution { background:linear-gradient(135deg,#eef2ff,#e0e7ff); border:1px solid #c7d2fe; border-radius:12px; padding:18px; margin-bottom:14px; text-align:center; }
   .exam-solution p { font-size:18px; color:var(--slate-700); white-space:pre-wrap; margin-top:6px; }
   .exam-grade { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-  .exam-grade button { border-radius:12px; padding:16px; font-weight:700; color:#fff; }
+  .exam-grade button { border-radius:12px; padding:16px; font-weight:700; color:#fff; opacity:.55; transition:opacity .15s, box-shadow .15s; }
+  .exam-grade button:hover { opacity:.85; }
+  .exam-grade .grade-on { opacity:1; box-shadow:0 0 0 3px rgba(15,23,42,.35); }
+  .exam-nav { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:18px; }
+  .exam-nav .btn { min-width:150px; }
   .exam-timer-badge { background:var(--slate-800); color:#fff; border-radius:999px; padding:5px 14px; font-weight:700; font-size:14px; }
   .exam-progressbar { height:6px; background:var(--slate-200); border-radius:999px; overflow:hidden; margin-bottom:18px; }
   .exam-progressbar > div { height:100%; background:var(--indigo); transition:width .3s; }
@@ -219,7 +223,7 @@ let db = loadDB();
 let state = {
   view:'dashboard', moduleId:null,
   priorityFilter:'all', difficultyFilter:'due',
-  studying:false, queue:[], revealed:false, doneCount:0, hardCount:{}, studyTitle:'', studyBarIds:[],
+  studying:false, queue:[], revealed:false, doneCount:0, hardCount:{}, studyTitle:'', studyBarIds:[], history:[],
   modalOpen:false, editId:null,
   examDuration:30, examType:'mixed', exam:null,
 };
@@ -450,8 +454,9 @@ function viewStudy(){
   const barCards = (state.studyBarIds||[]).map(id=>db.cards.find(c=>c.id===id)).filter(Boolean);
   return `<div class="wrap wrap-narrow">
     <div class="study-top">
-      <div style="display:flex;align-items:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <button class="btn-ghost" id="exitStudy">✕ Session beenden</button>
+        <button class="btn-ghost" id="backStudy" title="Letzten Schritt rückgängig" ${state.history.length===0?'disabled':''}>↩ Zurück</button>
         <button class="btn-ghost" id="skipCard" title="Frage überspringen" ${state.queue.length<=1?'disabled':''}>⏭ Überspringen</button>
       </div>
       <div style="display:flex;align-items:center;gap:12px">
@@ -581,8 +586,36 @@ function modalHTML(activeModule){
   </div>`;
 }
 
+/* ---------- Verlauf: einen Schritt rückgängig machen ---------- */
+function pushHistory(){
+  const id = state.queue[0];
+  const c = db.cards.find(x=>x.id===id);
+  state.history.push({
+    queue: state.queue.slice(),
+    doneCount: state.doneCount,
+    hardCount: {...state.hardCount},
+    cardId: id,
+    card: c ? {difficulty:c.difficulty, lastReviewed:c.lastReviewed, hiddenUntil:c.hiddenUntil} : null,
+  });
+}
+function undoStudy(){
+  if (!state.history.length) return;
+  const h = state.history.pop();
+  state.queue = h.queue;
+  state.doneCount = h.doneCount;
+  state.hardCount = h.hardCount;
+  if (h.card){
+    const c = db.cards.find(x=>x.id===h.cardId);
+    if (c){ c.difficulty=h.card.difficulty; c.lastReviewed=h.card.lastReviewed; c.hiddenUntil=h.card.hiddenUntil; }
+  }
+  state.revealed = false;
+  save();
+  render();
+}
+
 /* ---------- Frage überspringen: ungewertet ans Ende ---------- */
 function skipCard(){
+  pushHistory();
   const [head, ...rest] = state.queue;
   state.queue = [...rest, head];
   state.revealed = false;
@@ -592,6 +625,7 @@ function skipCard(){
 /* ---------- Bewertung in der Session ---------- */
 function doRate(level){
   const id = state.queue[0];
+  pushHistory();
   rateCard(id, level);
   state.revealed = false;
   const rest = state.queue.slice(1);
@@ -614,49 +648,40 @@ function doRate(level){
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function fmtTime(ms){ const s=Math.max(0,Math.floor(ms/1000)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
 
+function buildQuestion(card, all, type){
+  let qType = type==='mixed' ? (Math.random()<0.5?'quiz':'open') : type;
+  let options = null;
+  if (qType==='quiz'){
+    const distract = shuffle(all.filter(c=>c.id!==card.id && c.back.trim()!==card.back.trim()));
+    if (distract.length===0) qType='open';                 // keine falschen Optionen möglich -> offen
+    else options = shuffle([{text:card.back,correct:true}, ...distract.slice(0,3).map(c=>({text:c.back,correct:false}))]);
+  }
+  return { id:card.id, qType, options };
+}
 function startExam(){
   const m = db.modules.find(x=>x.id===state.moduleId); if(!m) return;
   const pool = db.cards.filter(c=>c.moduleId===m.id); if(!pool.length) return;
+  const order = shuffle(pool.map(c=>c.id));
   state.exam = {
     moduleId:m.id, moduleName:m.name, type:state.examType,
-    queue:shuffle(pool.map(c=>c.id)), idx:0,
-    endsAt:Date.now()+state.examDuration*60000, durationMin:state.examDuration,
-    results:[], revealed:false, picked:null, options:null, qType:null, finished:false, finishedAt:0,
+    q: order.map(id=>buildQuestion(db.cards.find(c=>c.id===id), pool, state.examType)),
+    ans: order.map(()=>({picked:null, revealed:false, correct:null})),
+    idx:0, endsAt:Date.now()+state.examDuration*60000, durationMin:state.examDuration,
+    finished:false, finishedAt:0,
   };
-  prepQuestion();
   startExamTimer();
   render();
 }
-function prepQuestion(){
-  const ex=state.exam; if(!ex) return;
-  ex.revealed=false; ex.picked=null; ex.options=null;
-  const card=db.cards.find(c=>c.id===ex.queue[ex.idx]); if(!card) return;
-  let qType = ex.type==='mixed' ? (Math.random()<0.5?'quiz':'open') : ex.type;
-  if (qType==='quiz'){
-    const distract = shuffle(db.cards.filter(c=>c.moduleId===ex.moduleId && c.id!==card.id && c.back.trim()!==card.back.trim()));
-    if (distract.length===0) qType='open';                 // keine falschen Optionen möglich -> offen
-    else ex.options = shuffle([{text:card.back,correct:true}, ...distract.slice(0,3).map(c=>({text:c.back,correct:false}))]);
-  }
-  ex.qType=qType;
-}
 function answerQuiz(i){
-  const ex=state.exam; if(!ex||ex.picked!=null) return;
-  ex.picked=i;
-  ex.results.push({id:ex.queue[ex.idx], correct:!!(ex.options[i]&&ex.options[i].correct)});
+  const ex=state.exam; if(!ex) return;
+  const a=ex.ans[ex.idx], q=ex.q[ex.idx];
+  a.picked=i; a.correct=!!(q.options[i]&&q.options[i].correct);   // Auswahl jederzeit änderbar
   render();
 }
-function revealExamAnswer(){ if(state.exam){ state.exam.revealed=true; render(); } }
-function gradeOpen(correct){
-  const ex=state.exam; if(!ex) return;
-  ex.results.push({id:ex.queue[ex.idx], correct});
-  nextExamQuestion();
-}
-function nextExamQuestion(){
-  const ex=state.exam; if(!ex) return;
-  ex.idx++;
-  if (ex.idx>=ex.queue.length){ finishExam(); return; }
-  prepQuestion(); render();
-}
+function revealExamAnswer(){ if(state.exam){ state.exam.ans[state.exam.idx].revealed=true; render(); } }
+function gradeOpen(correct){ const ex=state.exam; if(!ex) return; ex.ans[ex.idx].correct=correct; render(); }
+function examNext(){ const ex=state.exam; if(!ex) return; if(ex.idx>=ex.q.length-1){ finishExam(); return; } ex.idx++; render(); }
+function examPrev(){ const ex=state.exam; if(!ex) return; if(ex.idx>0){ ex.idx--; render(); } }
 function finishExam(){ const ex=state.exam; if(!ex) return; ex.finished=true; ex.finishedAt=Date.now(); stopExamTimer(); render(); }
 function exitExam(){ stopExamTimer(); state.exam=null; state.view='module'; render(); }
 function startExamTimer(){ stopExamTimer(); examTimer=setInterval(examTick,1000); }
@@ -697,49 +722,54 @@ function viewExamSetup(m){
 function viewExam(){
   const ex=state.exam;
   if (ex.finished) return viewExamResult();
-  const card=db.cards.find(c=>c.id===ex.queue[ex.idx]);
+  const q=ex.q[ex.idx], a=ex.ans[ex.idx];
+  const card=db.cards.find(c=>c.id===q.id);
   if(!card) return viewExamResult();
   const rem=ex.endsAt-Date.now();
   let area='';
-  if (ex.qType==='quiz'){
-    area = `<div class="exam-opts">` + ex.options.map((o,i)=>{
+  if (q.qType==='quiz'){
+    area = `<div class="exam-opts">` + q.options.map((o,i)=>{
       let cls='exam-opt';
-      if (ex.picked!=null){ if(o.correct) cls+=' exam-correct'; else if(i===ex.picked) cls+=' exam-wrong'; }
-      return `<button class="${cls}" data-quizopt="${i}" ${ex.picked!=null?'disabled':''}>${esc(o.text)}</button>`;
+      if (a.picked!=null){ if(o.correct) cls+=' exam-correct'; else if(i===a.picked) cls+=' exam-wrong'; }
+      return `<button class="${cls}" data-quizopt="${i}">${esc(o.text)}</button>`;
     }).join('') + `</div>`;
-    if (ex.picked!=null) area += `<button class="btn" id="examNext" style="width:100%;margin-top:14px">Weiter →</button>`;
   } else {
-    if (!ex.revealed) area = `<button class="reveal-btn" id="examReveal">Lösung anzeigen</button>`;
+    if (!a.revealed) area = `<button class="reveal-btn" id="examReveal">Lösung anzeigen</button>`;
     else area = `<div class="exam-solution"><span class="tag" style="color:var(--indigo)">Lösung</span><p>${esc(card.back)}</p></div>
       <p style="text-align:center;color:var(--slate-500);font-size:13px;margin-bottom:10px">Hast du es gewusst?</p>
       <div class="exam-grade">
-        <button class="r-hard" data-grade="0">✗ Falsch</button>
-        <button class="r-easy" data-grade="1">✓ Richtig</button>
+        <button class="r-hard ${a.correct===false?'grade-on':''}" data-grade="0">✗ Falsch</button>
+        <button class="r-easy ${a.correct===true?'grade-on':''}" data-grade="1">✓ Richtig</button>
       </div>`;
   }
+  const last = ex.idx>=ex.q.length-1;
   return `<div class="wrap wrap-narrow">
     <div class="study-top">
       <button class="btn-ghost" id="exitExam">✕ Abbrechen</button>
       <div style="display:flex;align-items:center;gap:12px">
         <span class="exam-timer-badge">⏱ <span id="examTimer">${fmtTime(rem)}</span></span>
-        <span style="font-size:13px;color:var(--slate-500)">Frage ${ex.idx+1} / ${ex.queue.length}</span>
+        <span style="font-size:13px;color:var(--slate-500)">Frage ${ex.idx+1} / ${ex.q.length}</span>
       </div>
     </div>
-    <div class="exam-progressbar"><div style="width:${(ex.idx/ex.queue.length*100).toFixed(1)}%"></div></div>
+    <div class="exam-progressbar"><div style="width:${((ex.idx+1)/ex.q.length*100).toFixed(1)}%"></div></div>
     <div class="exam-question">
-      <span class="tag" style="color:#818cf8">${ex.qType==='quiz'?'Quizfrage':'Offene Frage'}</span>
+      <span class="tag" style="color:#818cf8">${q.qType==='quiz'?'Quizfrage':'Offene Frage'}</span>
       <p>${esc(card.front)}</p>
     </div>
     ${area}
+    <div class="exam-nav">
+      <button class="btn-ghost" id="examPrev" ${ex.idx===0?'disabled':''}>← Zurück</button>
+      <button class="btn" id="examNext">${last?'✓ Beenden':'Weiter →'}</button>
+    </div>
   </div>`;
 }
 
 function viewExamResult(){
   const ex=state.exam;
-  const correct=ex.results.filter(r=>r.correct).length, answered=ex.results.length;
+  const correct=ex.ans.filter(a=>a.correct===true).length, answered=ex.ans.filter(a=>a.correct!==null).length;
   const pct = answered ? Math.round(correct/answered*100) : 0;
   const usedMs = ex.durationMin*60000 - (ex.endsAt-(ex.finishedAt||Date.now()));
-  const wrong = ex.results.filter(r=>!r.correct).map(r=>db.cards.find(c=>c.id===r.id)).filter(Boolean);
+  const wrong = ex.ans.map((a,i)=>({a,id:ex.q[i].id})).filter(x=>x.a.correct===false).map(x=>db.cards.find(c=>c.id===x.id)).filter(Boolean);
   const grade = pct>=90?'🏆 Sehr gut!':pct>=75?'👍 Gut!':pct>=50?'🙂 Geht so':'📚 Üben!';
   return `<div class="wrap wrap-narrow"><div class="done" style="padding:40px 0">
     <div class="emoji">${pct>=75?'🎉':'📊'}</div>
@@ -776,8 +806,8 @@ function bind(){
   document.querySelectorAll('[data-delcard]').forEach(el=>el.onclick=()=>deleteCard(el.dataset.delcard));
   document.querySelectorAll('[data-editcard]').forEach(el=>el.onclick=()=>{ state.editId=el.dataset.editcard; state.modalOpen=true; render(); });
   document.querySelectorAll('[data-star]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); toggleStar(el.dataset.star); });
-  if ($('startStudy')) $('startStudy').onclick = ()=>{ const pool=buildPool(); if(!pool.length) return; const mod=db.modules.find(x=>x.id===state.moduleId); state.studying=true; state.queue=pool.map(c=>c.id); state.studyTitle=mod?mod.name:''; state.studyBarIds=db.cards.filter(c=>c.moduleId===state.moduleId).map(c=>c.id); state.revealed=false; state.doneCount=0; state.hardCount={}; render(); };
-  if ($('startFav')) $('startFav').onclick = ()=>{ const pool=db.cards.filter(c=>c.starred); if(!pool.length) return; state.studying=true; state.queue=pool.map(c=>c.id); state.studyTitle='⭐ Markiert'; state.studyBarIds=pool.map(c=>c.id); state.revealed=false; state.doneCount=0; state.hardCount={}; render(); };
+  if ($('startStudy')) $('startStudy').onclick = ()=>{ const pool=buildPool(); if(!pool.length) return; const mod=db.modules.find(x=>x.id===state.moduleId); state.studying=true; state.queue=pool.map(c=>c.id); state.studyTitle=mod?mod.name:''; state.studyBarIds=db.cards.filter(c=>c.moduleId===state.moduleId).map(c=>c.id); state.revealed=false; state.doneCount=0; state.hardCount={}; state.history=[]; render(); };
+  if ($('startFav')) $('startFav').onclick = ()=>{ const pool=db.cards.filter(c=>c.starred); if(!pool.length) return; state.studying=true; state.queue=pool.map(c=>c.id); state.studyTitle='⭐ Markiert'; state.studyBarIds=pool.map(c=>c.id); state.revealed=false; state.doneCount=0; state.hardCount={}; state.history=[]; render(); };
 
   // Probeprüfung
   if ($('startExamSetup')) $('startExamSetup').onclick = ()=>{ state.view='examSetup'; render(); };
@@ -788,7 +818,8 @@ function bind(){
   if ($('startExam')) $('startExam').onclick = startExam;
   if ($('exitExam')) $('exitExam').onclick = exitExam;
   document.querySelectorAll('[data-quizopt]').forEach(el=>el.onclick=()=>answerQuiz(+el.dataset.quizopt));
-  if ($('examNext')) $('examNext').onclick = nextExamQuestion;
+  if ($('examNext')) $('examNext').onclick = examNext;
+  if ($('examPrev')) $('examPrev').onclick = examPrev;
   if ($('examReveal')) $('examReveal').onclick = revealExamAnswer;
   document.querySelectorAll('[data-grade]').forEach(el=>el.onclick=()=>gradeOpen(el.dataset.grade==='1'));
   if ($('examAgain')) $('examAgain').onclick = ()=>{ stopExamTimer(); state.exam=null; state.view='examSetup'; render(); };
@@ -806,6 +837,7 @@ function bind(){
   document.querySelectorAll('[data-rate]').forEach(el=>el.onclick=()=>doRate(el.dataset.rate));
   if ($('exitStudy')) $('exitStudy').onclick = ()=>{ state.studying=false; render(); };
   if ($('skipCard')) $('skipCard').onclick = skipCard;
+  if ($('backStudy')) $('backStudy').onclick = undoStudy;
   if ($('editCurrent')) $('editCurrent').onclick = ()=>{ state.editId=state.queue[0]; state.revealed=false; state.modalOpen=true; render(); };
   if ($('starCurrent')) $('starCurrent').onclick = ()=>{ const c=db.cards.find(x=>x.id===state.queue[0]); if(!c) return; c.starred=!c.starred; save(); $('starCurrent').textContent=c.starred?'⭐':'☆'; };
 
